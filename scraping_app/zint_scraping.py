@@ -8,40 +8,112 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+from .models import Company_Details
 
 
-chrome_options = Options()
-#chrome_options.add_argument("--headless")  # Runs Chrome in headless mode.
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-dev-shm-usage")
+# get next pagination button 
+def get_pagination_button(driver, count):
+    try:
+        divs = driver.find_elements(By.CSS_SELECTOR, ".col-md-auto.col-1.pagination-button")
+        last_div = divs[-1]
+        button = last_div.find_element(By.TAG_NAME, "button")
+        
+        if button.is_enabled():
+            count += 1
+            if count > 50:
+                print("stop navigating")
+            else:
+                button.click()
+                get_page_data(driver, count)
+        else:
+            print("No more pages to navigate")
+        
+    except Exception as e:
+        print(f"Error getting pagination button: {e}")
 
 
-driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
+# get page data
+def get_page_data(driver, count):
+    try:
+        time.sleep(15)
 
-driver.get("https://app.zint.io/login")
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "table"))  # Replace with the appropriate selector
+        )
+        # Locate the table
+        tables = driver.find_elements(By.CSS_SELECTOR, ".table.table-striped.table-bordered.company-results-table")
 
-email_input = driver.find_element(By.NAME, 'email')  # Adjust the name as needed
-password_input = driver.find_element(By.NAME, 'password')  # Adjust the name as needed
+        rows = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.TAG_NAME, "tr"))
+        )
+        # # get table headings
+        # headings = tables[0].find_elements(By.TAG_NAME, "th")
+        # print(headings)
 
-email_input.send_keys('Rory.fitzmaurice@inxpress.com')
-password_input.send_keys('Grannyfitz1')
+        second_table = tables[1]
+        rows = second_table.find_elements(By.TAG_NAME, "tr")
 
-button = driver.find_element(By.CSS_SELECTOR, 'button.basic-button-base.button-dark.full-width')
-driver.execute_script("arguments[0].click();", button)
+        for row in rows:
+            cells = row.find_elements(By.TAG_NAME, "td")
+            row_data = [cell.text for cell in cells]
+            print(len(row_data))
+            print(row_data[1])
+            if len(row_data) < 11:
+                print("skipping row")
+                continue
 
-time.sleep(15)
+            company_details = Company_Details(
+                company_name=row_data[1],
+                email=row_data[2],
+                registered_address_town=row_data[3],
+                url=row_data[4],
+                company_summary=row_data[5],
+                revenue=row_data[6],
+                registered_address_postcode=row_data[8],
+                linkedin_url=row_data[9],
+                do_not_contact_status=True if row_data[10] == 'Do Not Contact' else False,
+            )
+            company_details.save()
+        get_pagination_button(driver, count)
 
-WebDriverWait(driver, 10).until(
-    EC.presence_of_element_located((By.CSS_SELECTOR, "table"))  # Replace with the appropriate selector
-)
+    except Exception as e:
+        print(f"Error getting page data: {e}")
 
-# Locate the table
-table = driver.find_element(By.CSS_SELECTOR, "table")
 
-rows = table.find_elements(By.TAG_NAME, "tr")
-if rows:
-    print("rows found")
-else:
-    print("rows not found")
+# login 
+def login(driver):
+    try:
+        driver.get("https://app.zint.io/login")
+
+        email_input = driver.find_element(By.NAME, 'email')  # Adjust the name as needed
+        password_input = driver.find_element(By.NAME, 'password')  # Adjust the name as needed
+
+        email_input.send_keys('Rory.fitzmaurice@inxpress.com')
+        password_input.send_keys('Grannyfitz1')
+
+        button = driver.find_element(By.CSS_SELECTOR, 'button.basic-button-base.button-dark.full-width')
+        driver.execute_script("arguments[0].click();", button)
+        count = 1
+        get_page_data(driver, count)
+
+    except Exception as e:
+        print(f"Error logging in: {e}")
+
+
+def scrape_data():
+    chrome_options = Options()
+    #chrome_options.add_argument("--headless")  # Runs Chrome in headless mode.
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+
+    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=chrome_options)
+
+    login(driver)
+
+    driver.quit()
+
+
+#scrape_data()
+
 
 
